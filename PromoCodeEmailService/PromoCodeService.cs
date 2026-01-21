@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Data;
 using System.Data.SqlClient;
 using System.Threading.Tasks;
 
@@ -20,89 +21,8 @@ namespace PromoCodeEmailService.Services
 
         public PromoCodeService()
         {
-            _connectionString = ConfigurationManager.ConnectionStrings["AppointmentTracking"]?.ConnectionString
-                ?? throw new Exception("Connection string 'AppointmentTracking' not found in app.config");
-        }
-
-        private async Task EnsureDatabaseInitialized()
-        {
-            if (!_databaseInitialized)
-            {
-                await InitializeDatabaseAsync();
-                _databaseInitialized = true;
-            }
-        }
-
-        private async Task InitializeDatabaseAsync()
-        {
-            try
-            {
-                Console.WriteLine("Initializing database tables...");
-
-                using (var connection = new SqlConnection(_connectionString))
-                {
-                    await connection.OpenAsync();
-
-                    // Check and create tables using a transaction
-                    var createTablesQuery = @"
-                        -- Create PromoCodes table if it doesn't exist
-                        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'PromoCodes')
-                        BEGIN
-                            CREATE TABLE PromoCodes (
-                                Id INT IDENTITY(1,1) PRIMARY KEY,
-                                Code NVARCHAR(50) NOT NULL UNIQUE,
-                                DiscountAmount DECIMAL(5,2) NOT NULL,
-                                DiscountedPrice DECIMAL(5,2) NOT NULL,
-                                Status NVARCHAR(20) DEFAULT 'Active',
-                                CreatedDate DATETIME DEFAULT GETDATE(),
-                                ValidFrom DATE NOT NULL,
-                                ValidTo DATE NOT NULL,
-                                IsUsed BIT DEFAULT 0,
-                                UsedDate DATETIME NULL
-                            );
-                            PRINT 'PromoCodes table created.';
-                        END
-                        ELSE
-                        BEGIN
-                            PRINT 'PromoCodes table already exists.';
-                        END
-                        
-                        -- Create EmailLogs table if it doesn't exist
-                        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'EmailLogs')
-                        BEGIN
-                            CREATE TABLE EmailLogs (
-                                Id INT IDENTITY(1,1) PRIMARY KEY,
-                                SentDate DATETIME DEFAULT GETDATE(),
-                                RecipientCount INT NOT NULL,
-                                PromoCodeBatchId INT NULL,
-                                Status NVARCHAR(20) NOT NULL,
-                                ErrorMessage NVARCHAR(500) NULL
-                            );
-                            PRINT 'EmailLogs table created.';
-                        END
-                        ELSE
-                        BEGIN
-                            PRINT 'EmailLogs table already exists.';
-                        END";
-
-                    using (var command = new SqlCommand(createTablesQuery, connection))
-                    {
-                        await command.ExecuteNonQueryAsync();
-                        Console.WriteLine("✅ Database tables initialized successfully.");
-                    }
-                }
-            }
-            catch (SqlException sqlEx)
-            {
-                Console.WriteLine($"❌ SQL Error initializing database: {sqlEx.Message}");
-                Console.WriteLine($"   Error Number: {sqlEx.Number}");
-                throw;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Error initializing database: {ex.Message}");
-                throw;
-            }
+            _connectionString = ConfigurationManager.ConnectionStrings["PromoCodeService"]?.ConnectionString
+                ?? throw new Exception("Connection string 'PromoCodeService' not found in app.config");
         }
 
         public async Task<List<PromoCode>> GenerateWeeklyPromoCodes()
@@ -111,8 +31,7 @@ namespace PromoCodeEmailService.Services
             {
                 Console.WriteLine("\n=== Generating Weekly Promo Codes ===");
 
-                // Ensure database is initialized first
-                await EnsureDatabaseInitialized();
+                //await EnsureDatabaseInitialized();
 
                 var codes = new List<PromoCode>();
 
@@ -124,7 +43,7 @@ namespace PromoCodeEmailService.Services
 
                 Console.WriteLine($"Promo period: {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}");
 
-                // Define 5 different discount levels
+                // 5 different discount levels
                 var discounts = new[]
                 {
                     0.25m,  // $1.75
@@ -134,7 +53,7 @@ namespace PromoCodeEmailService.Services
                     1.25m   // $0.75
                 };
 
-                // Try to deactivate last week's codes
+                // deactivate last week's codes
                 await DeactivateOldPromoCodes();
 
                 // Generate 5 new promo codes
@@ -148,33 +67,42 @@ namespace PromoCodeEmailService.Services
                     Console.WriteLine($"  Discount: ${discount:F2}");
                     Console.WriteLine($"  Price: ${discountedPrice:F2}");
 
-                    var promoCode = await CreatePromoCode(discount, startDate, endDate);
+                    var promoCode = await CreatePromoCode(discount, startDate, endDate, "Stratus", "PromoCodeEmailService");
                     codes.Add(promoCode);
                 }
 
-                Console.WriteLine($"\n✅ Successfully generated {codes.Count} promo codes.");
+                Console.WriteLine($"\nSuccessfully generated {codes.Count} promo codes.");
                 return codes;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error in GenerateWeeklyPromoCodes: {ex.Message}");
+                Console.WriteLine($"Error in GenerateWeeklyPromoCodes: {ex.Message}");
                 throw;
             }
         }
 
-        private async Task<PromoCode> CreatePromoCode(decimal discount, DateTime startDate, DateTime endDate)
+        private async Task<PromoCode> CreatePromoCode(
+            decimal promoValue,
+            DateTime weekStartDate,
+            DateTime weekEndDate,
+            string createdBy,
+            string applicationName)
         {
             var code = await GenerateUniqueCode();
-            var discountedPrice = OriginalPrice - discount;
 
             var promoCode = new PromoCode
             {
-                Code = code,
-                DiscountAmount = discount,
-                DiscountedPrice = discountedPrice,
-                ValidFrom = startDate,
-                ValidTo = endDate,
-                Status = "Active"
+                PromoCodeValue = code,
+                PromoValue = promoValue,
+                WeekStartDate = weekStartDate,
+                WeekEndDate = weekEndDate,
+                Deleted = false,
+
+                CreatedDate = DateTime.Now,
+                CreatedBy = createdBy,
+                ModifiedDate = DateTime.Now,
+                ModifiedBy = createdBy,
+                ApplicationName = applicationName
             };
 
             await SavePromoCodeToDatabase(promoCode);
@@ -193,7 +121,7 @@ namespace PromoCodeEmailService.Services
                 code = _random.Next(100000, 999999).ToString();
                 attempts++;
 
-                Console.WriteLine($"  Attempt {attempts}: Checking code {code}...");
+                Console.WriteLine($"Attempt {attempts}: Checking code {code}...");
 
                 isUnique = await CheckCodeUniqueness(code);
 
@@ -204,7 +132,7 @@ namespace PromoCodeEmailService.Services
             }
             while (!isUnique);
 
-            Console.WriteLine($"  ✅ Unique code generated: {code}");
+            Console.WriteLine($"Unique code generated: {code}");
             return code;
         }
 
@@ -216,7 +144,7 @@ namespace PromoCodeEmailService.Services
                 {
                     await connection.OpenAsync();
 
-                    var query = "SELECT COUNT(1) FROM PromoCodes WHERE Code = @Code";
+                    var query = "SELECT COUNT(1) FROM AF_TBL_WEEKLY_PROMO_CODES WHERE PROMO_CODE = @Code";
                     using (var command = new SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@Code", code);
@@ -226,19 +154,34 @@ namespace PromoCodeEmailService.Services
                     }
                 }
             }
-            catch (SqlException sqlEx) when (sqlEx.Number == 208) // Invalid object name
+            catch (SqlException sqlEx) when (sqlEx.Number == 208)
             {
-                // Table doesn't exist yet, so code is unique
                 return true;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"  ⚠ Error checking uniqueness: {ex.Message}");
-                // For any other error, assume not unique to be safe
+                Console.WriteLine($"Error checking uniqueness: {ex.Message}");
                 return false;
             }
         }
+        private async Task<long> GetNextPromoId(SqlConnection connection)
+        {
+            using (var cmd = new SqlCommand("AF_GET_MAX_COLUMN_ID_QRDA", connection))
+            {
+                cmd.CommandType = CommandType.StoredProcedure;
 
+                cmd.Parameters.AddWithValue("@COLUMNNAME", "PROMO_ID");
+
+                var outputParam = new SqlParameter("@OUTVALUE", SqlDbType.BigInt)
+                {
+                    Direction = ParameterDirection.Output
+                };
+                cmd.Parameters.Add(outputParam);
+
+                await cmd.ExecuteNonQueryAsync();
+                return (long)outputParam.Value;
+            }
+        }
         private async Task SavePromoCodeToDatabase(PromoCode promoCode)
         {
             try
@@ -247,27 +190,58 @@ namespace PromoCodeEmailService.Services
                 {
                     await connection.OpenAsync();
 
+                    long promoId = await GetNextPromoId(connection);
+
                     var query = @"
-                        INSERT INTO PromoCodes (Code, DiscountAmount, DiscountedPrice, Status, ValidFrom, ValidTo)
-                        VALUES (@Code, @DiscountAmount, @DiscountedPrice, @Status, @ValidFrom, @ValidTo)";
+                                INSERT INTO AF_TBL_WEEKLY_PROMO_CODES
+                                (
+                                    PROMO_ID,
+                                    WEEK_START_DATE,
+                                    WEEK_END_DATE,
+                                    PROMO_CODE,
+                                    PROMO_VALUE,
+                                    DELETED,
+                                    CREATED_DATE,
+                                    CREATED_BY,
+                                    MODIFIED_DATE,
+                                    MODIFIED_BY,
+                                    APPLICATION_NAME
+                                )
+                                VALUES
+                                (
+                                    @PromoId,
+                                    @WeekStartDate,
+                                    @WeekEndDate,
+                                    @PromoCode,
+                                    @PromoValue,
+                                    1,
+                                    GETDATE(),
+                                    @CreatedBy,
+                                    GETDATE(),
+                                    @ModifiedBy,
+                                    @ApplicationName
+                                );";
 
                     using (var command = new SqlCommand(query, connection))
                     {
-                        command.Parameters.AddWithValue("@Code", promoCode.Code);
-                        command.Parameters.AddWithValue("@DiscountAmount", promoCode.DiscountAmount);
-                        command.Parameters.AddWithValue("@DiscountedPrice", promoCode.DiscountedPrice);
-                        command.Parameters.AddWithValue("@Status", promoCode.Status);
-                        command.Parameters.AddWithValue("@ValidFrom", promoCode.ValidFrom);
-                        command.Parameters.AddWithValue("@ValidTo", promoCode.ValidTo);
+                        command.Parameters.Add("@PromoId", SqlDbType.BigInt).Value = promoId;
+                        command.Parameters.Add("@WeekStartDate", SqlDbType.Date).Value = promoCode.WeekStartDate;
+                        command.Parameters.Add("@WeekEndDate", SqlDbType.Date).Value = promoCode.WeekEndDate;
+                        command.Parameters.Add("@PromoCode", SqlDbType.VarChar, 50).Value = promoCode.PromoCodeValue;
+                        command.Parameters.Add("@PromoValue", SqlDbType.VarChar, 50).Value = promoCode.PromoValue; // or formatted value
+                        command.Parameters.Add("@CreatedBy", SqlDbType.VarChar, 100).Value = promoCode.CreatedBy;
+                        command.Parameters.Add("@ModifiedBy", SqlDbType.VarChar, 100).Value = promoCode.ModifiedBy;
+                        command.Parameters.Add("@ApplicationName", SqlDbType.VarChar, 100).Value = promoCode.ApplicationName;
 
                         await command.ExecuteNonQueryAsync();
-                        Console.WriteLine($"  💾 Saved to database: {promoCode.Code}");
                     }
+
+                    Console.WriteLine($"Saved promo code {promoCode.PromoCodeValue} with ID {promoId}");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"  ❌ Error saving promo code: {ex.Message}");
+                Console.WriteLine($"Error saving promo code: {ex.Message}");
                 throw;
             }
         }
@@ -283,10 +257,12 @@ namespace PromoCodeEmailService.Services
                     await connection.OpenAsync();
 
                     var query = @"
-                        UPDATE PromoCodes 
-                        SET Status = 'Inactive'
-                        WHERE Status = 'Active' 
-                        AND ValidTo < @Today";
+                                UPDATE AF_TBL_WEEKLY_PROMO_CODES 
+                                SET DELETED = 1,
+                                    MODIFIED_DATE = GETDATE(),
+                                    MODIFIED_BY = 'Stratus'
+                                WHERE DELETED = 0 
+                                AND WEEK_END_DATE < @Today";
 
                     using (var command = new SqlCommand(query, connection))
                     {
@@ -295,25 +271,24 @@ namespace PromoCodeEmailService.Services
 
                         if (rowsAffected > 0)
                         {
-                            Console.WriteLine($"  🔄 Deactivated {rowsAffected} old promo codes");
+                            Console.WriteLine($"Soft-deleted {rowsAffected} old promo codes");
                         }
                         else
                         {
-                            Console.WriteLine("  ℹ No old promo codes to deactivate");
+                            Console.WriteLine("No old promo codes to deactivate");
                         }
                     }
                 }
             }
-            catch (SqlException sqlEx) when (sqlEx.Number == 208) // Invalid object name
+            catch (SqlException sqlEx) when (sqlEx.Number == 208)
             {
-                // Table doesn't exist yet, that's okay - it's the first run
-                Console.WriteLine("  ℹ PromoCodes table doesn't exist yet (first run)");
+                Console.WriteLine("AF_TBL_WEEKLY_PROMO_CODES table doesn't exist yet (first run)");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"  ⚠ Error deactivating old promo codes: {ex.Message}");
-                // Don't throw - this is not critical
+                Console.WriteLine($"Error deactivating old promo codes: {ex.Message}");
             }
         }
+
     }
 }

@@ -8,20 +8,25 @@ namespace PromoCodeEmailService
 {
     public class PromoCode
     {
-        public int Id { get; set; }
-        public string Code { get; set; } = string.Empty;
-        public decimal OriginalPrice { get; set; } = 2.00m;
-        public decimal DiscountAmount { get; set; }
-        public decimal DiscountedPrice { get; set; }
-        public string Status { get; set; } = "Active";
-        public DateTime CreatedDate { get; set; } = DateTime.Now;
-        public DateTime ValidFrom { get; set; }
-        public DateTime ValidTo { get; set; }
-        public bool IsUsed { get; set; } = false;
-        public DateTime? UsedDate { get; set; }
+        public long PromoId { get; set; }
 
-        // Calculated property for display
-        public string FormattedPrice => DiscountedPrice.ToString("C");
-        public string FormattedDiscount => DiscountAmount.ToString("C");
+        public string PromoCodeValue { get; set; } = string.Empty;
+        public decimal PromoValue { get; set; }
+        public DateTime WeekStartDate { get; set; }
+        public DateTime WeekEndDate { get; set; }
+        public bool Deleted { get; set; } = false;
+        public DateTime CreatedDate { get; set; }
+        public string CreatedBy { get; set; } = string.Empty;
+        public DateTime ModifiedDate { get; set; }
+        public string ModifiedBy { get; set; } = string.Empty;
+        public string ApplicationName { get; set; } = string.Empty;
+        public string Code => PromoCodeValue;
+        public decimal OriginalPrice => 2.00m;
+        public decimal DiscountAmount => OriginalPrice - PromoValue;
+        public string FormattedPrice => $"${PromoValue:F2}";
+        public string FormattedDiscount => $"${DiscountAmount:F2}";
+        public DateTime ValidFrom => WeekStartDate;
+        public DateTime ValidTo => WeekEndDate;
     }
+
 }
