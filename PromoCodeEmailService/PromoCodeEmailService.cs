@@ -25,12 +25,7 @@ namespace PromoCodeEmailService
         {
             InitializeComponent();
 
-            // Setup event log
             _eventLog = new EventLog();
-            //if (!EventLog.SourceExists("PromoCodeEmailService"))
-            //{
-            //    EventLog.CreateEventSource("PromoCodeEmailService", "Application");
-            //}
             _eventLog.Source = "PromoCodeEmailService";
             _eventLog.Log = "Application";
         }
@@ -114,11 +109,11 @@ namespace PromoCodeEmailService
             try
             {
                 // Get connection string from app.config
-                _connectionString = ConfigurationManager.ConnectionStrings["AppointmentTracking"]?.ConnectionString;
+                _connectionString = ConfigurationManager.ConnectionStrings["PromoCodeService"]?.ConnectionString;
 
                 if (string.IsNullOrEmpty(_connectionString))
                 {
-                    throw new Exception("Connection string 'AppointmentTracking' not found in app.config");
+                    throw new Exception("Connection string 'PromoCodeService' not found in app.config");
                 }
 
                 // Get recipients from app.config
@@ -162,8 +157,6 @@ namespace PromoCodeEmailService
                 }
                 else
                 {
-                    // Initialize database tables
-                    InitializeDatabase();
                     _eventLog.WriteEntry("Database initialized successfully.", EventLogEntryType.Information);
                 }
 
@@ -193,53 +186,6 @@ namespace PromoCodeEmailService
                 return false;
             }
         }
-
-        private void InitializeDatabase()
-        {
-            try
-            {
-                using (var connection = new SqlConnection(_connectionString))
-                {
-                    connection.Open();
-
-                    var createTablesQuery = @"
-                        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='PromoCodes' AND xtype='U')
-                        CREATE TABLE PromoCodes (
-                            Id INT IDENTITY(1,1) PRIMARY KEY,
-                            Code NVARCHAR(50) NOT NULL UNIQUE,
-                            DiscountAmount DECIMAL(5,2) NOT NULL,
-                            DiscountedPrice DECIMAL(5,2) NOT NULL,
-                            Status NVARCHAR(20) DEFAULT 'Active',
-                            CreatedDate DATETIME DEFAULT GETDATE(),
-                            ValidFrom DATE NOT NULL,
-                            ValidTo DATE NOT NULL,
-                            IsUsed BIT DEFAULT 0,
-                            UsedDate DATETIME NULL
-                        );
-                        
-                        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='EmailLogs' AND xtype='U')
-                        CREATE TABLE EmailLogs (
-                            Id INT IDENTITY(1,1) PRIMARY KEY,
-                            SentDate DATETIME DEFAULT GETDATE(),
-                            RecipientCount INT NOT NULL,
-                            PromoCodeBatchId INT NULL,
-                            Status NVARCHAR(20) NOT NULL,
-                            ErrorMessage NVARCHAR(500) NULL
-                        );";
-
-                    using (var command = new SqlCommand(createTablesQuery, connection))
-                    {
-                        command.ExecuteNonQuery();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _eventLog.WriteEntry($"Error initializing database: {ex.Message}", EventLogEntryType.Error);
-                throw;
-            }
-        }
-
         private void SetupWeeklyTimer()
         {
             try
@@ -312,7 +258,7 @@ namespace PromoCodeEmailService
                 }
 
                 // Log generated codes
-                var codesLog = string.Join(", ", promoCodes.Select(p => $"{p.Code} (${p.DiscountedPrice:F2})"));
+                var codesLog = string.Join(", ", promoCodes.Select(p => $"{p.Code} (${p.DiscountAmount:F2})"));
                 _eventLog.WriteEntry($"Generated {promoCodes.Count} promo codes: {codesLog}",
                     EventLogEntryType.Information);
 

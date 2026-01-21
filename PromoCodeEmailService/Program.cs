@@ -11,6 +11,10 @@ namespace PromoCodeEmailService
         {
             try
             {
+                #if DEBUG
+                System.Diagnostics.Debugger.Launch();
+                #endif
+
                 Console.WriteLine("Starting Promo Code Email Service...");
 
                 // Get connection string
@@ -48,7 +52,6 @@ namespace PromoCodeEmailService
             }
 
             Console.WriteLine("\nPress any key to exit...");
-            //Console.ReadKey();
         }
     }
 }
